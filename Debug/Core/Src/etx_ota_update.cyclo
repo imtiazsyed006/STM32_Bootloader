@@ -1,0 +1,15 @@
+../Core/Src/etx_ota_update.c:51:17:crc32_stm32_bytes	4
+../Core/Src/etx_ota_update.c:63:6:etx_ota_send_text_raw	4
+../Core/Src/etx_ota_update.c:75:6:etx_ota_logf	3
+../Core/Src/etx_ota_update.c:87:13:ota_reset_session	1
+../Core/Src/etx_ota_update.c:96:6:etx_ota_set_resp_sender	1
+../Core/Src/etx_ota_update.c:103:13:etx_ota_send_resp	2
+../Core/Src/etx_ota_update.c:123:13:etx_ota_feed_frame	12
+../Core/Src/etx_ota_update.c:175:13:etx_ota_download_and_flash	4
+../Core/Src/etx_ota_update.c:210:20:etx_process_data	24
+../Core/Src/etx_ota_update.c:317:26:write_data_to_slot	10
+../Core/Src/etx_ota_update.c:369:26:write_data_to_flash_app	7
+../Core/Src/etx_ota_update.c:413:20:finalize_staged_image_and_mark	7
+../Core/Src/etx_ota_update.c:450:16:get_available_slot_number	5
+../Core/Src/etx_ota_update.c:468:6:load_new_app	13
+../Core/Src/etx_ota_update.c:527:26:write_cfg_to_flash	7

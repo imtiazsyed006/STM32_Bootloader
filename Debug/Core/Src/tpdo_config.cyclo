@@ -1,0 +1,12 @@
+../Core/Inc/motor_specific.h:70:12:can_send	4
+../Core/Inc/motor_specific.h:85:12:actuator_sendd	4
+../Core/Inc/pdo_comm.h:32:24:canopen_pack_map	1
+../Core/Inc/pdo_comm.h:58:20:le32	1
+../Core/Inc/pdo_comm.h:66:12:sdo_dn_exp	7
+../Core/Inc/pdo_comm.h:96:19:sdo_dn_u8	1
+../Core/Inc/pdo_comm.h:97:19:sdo_dn_u16	1
+../Core/Inc/pdo_comm.h:98:19:sdo_dn_u32	1
+../Core/Src/tpdo_config.c:49:20:canopen_tpdo_map_valid	3
+../Core/Src/tpdo_config.c:86:12:apply_tpdo	13
+../Core/Src/tpdo_config.c:130:12:reset_tpdo	6
+../Core/Src/tpdo_config.c:154:12:send_rpdo	1
