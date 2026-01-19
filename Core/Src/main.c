@@ -1,4 +1,13 @@
 /* USER CODE BEGIN Header */
+/* This following is the setting for application. Keep the offset address at
+ * #define VECT_TAB_OFFSET 0x00040000U
+ * do the following changes in linker file for the app.
+ * MEMORY
+{
+  RAM   (xrw) : ORIGIN = 0x20000000, LENGTH = 512K
+  FLASH (rx)  : ORIGIN = 0x08040000, LENGTH = 2048K - 256K
+}
+ */
 /**
   ******************************************************************************
   * @file           : main.c
