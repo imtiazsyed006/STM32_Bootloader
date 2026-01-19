@@ -58,35 +58,6 @@ static const char* skip_ws(const char* p) {
     return p;
 }
 
-static int parse_percent_0_100(const char *p, uint8_t *out) {
-    char *end;
-    p = skip_ws(p);
-    if (!isdigit((unsigned char)*p)) return 0;
-
-    long v = strtol(p, &end, 10);
-    end = (char*)skip_ws(end);
-
-    if (*end != '\0') return 0;
-    if (v < 0 || v > 100) return 0;
-
-    *out = (uint8_t)v;
-    return 1;
-}
-
-static int parse_i32(const char *p, int32_t *out) {
-    char *end;
-    long v;
-    p = skip_ws(p);
-    if (*p == '\0') return 0;
-
-    v = strtol(p, &end, 10);
-    end = (char*)skip_ws(end);
-    if (*end != '\0') return 0;
-
-    if (v < (long)INT32_MIN || v > (long)INT32_MAX) return 0;
-    *out = (int32_t)v;
-    return 1;
-}
 
 /* -------------------------------------------------------------------------- */
 /* Command handler (text line commands)                                       */
@@ -125,14 +96,6 @@ void comm_handle_line(const char *line,
         return;
     }
 
-    /*send Telemetry over port 2000*/
-    if (iequals(line, "Telemetry")) {
-        if (send_bin && g_port2000_pcb) {
-        } else {
-            send_text("ERR:Telemetry channel not ready\n", ctx);
-        }
-        return;
-    }
 
     if (strncmp(line, "BIN:", 4) == 0) {
         uint8_t buf[64];
@@ -149,31 +112,6 @@ void comm_handle_line(const char *line,
         return;
     }
 
-    if (starts_with_ci(line, "Motor Command")) {
-        const char *p = line + strlen("Motor Command");
-        int32_t sval;
-        if (parse_i32(p, &sval)) {
-            uint32_t u = (uint32_t)sval * 10;
-            (void)u;
-        } else {
-            send_text("ERR:Motor value must be int32 (e.g. -500, 0, 12345)\n", ctx);
-        }
-        return;
-    }
-
-    if (starts_with_ci(line, "Actuator Command")) {
-        const char *p = line + strlen("Actuator Command");
-        uint8_t val;
-        if (parse_percent_0_100(p, &val)) {
-            uint32_t newVal = 1024 + ((62000 - 1024) / (100 - 0)) * (val - 0);
-            char ack[36];
-            snprintf(ack, sizeof ack, "ACK:Actuator %u\n", (unsigned)newVal);
-            send_text(ack, ctx);
-        } else {
-            send_text("ERR:Actuator value (0-100)\n", ctx);
-        }
-        return;
-    }
 
     send_text("ERR:Unknown command\n", ctx);
 }
