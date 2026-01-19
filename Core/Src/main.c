@@ -190,25 +190,7 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
-static void goto_application(void)
-{
-  printf("Jumping to application...\r\n");
 
-  void (*app_reset_handler)(void) =
-      (void*)(*((volatile uint32_t*) (ETX_APP_FLASH_ADDR + 4U)));
-
-  // Turn OFF LED before leaving BL
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
-
-  HAL_RCC_DeInit();
-  HAL_DeInit();
-  __set_MSP(*(volatile uint32_t*) ETX_APP_FLASH_ADDR);
-  SysTick->CTRL = 0;
-  SysTick->LOAD = 0;
-  SysTick->VAL  = 0;
-
-  app_reset_handler();
-}
 //void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 //{
 //	HAL_GPIO_TogglePin(GPIOB, LD1_Pin|LD3_Pin|LD2_Pin);

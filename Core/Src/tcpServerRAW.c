@@ -1,340 +1,230 @@
+/*
+ * tcpserverRAW.c (BOOTLOADER)
+ * Port 2001: RX OTA frames from host
+ * Port 2000: TX ACK/NACK responses to host (reply-only)
+ *
+ * IMPORTANT:
+ *  - Do not process OTA/flash inside tcp_recv callback
+ *  - Just copy bytes -> comm_ota_rx_bytes() -> free pbuf
+ */
+
 #include "tcpserverRAW.h"
+
+#include "lwip/tcp.h"
+#include "lwip/tcpip.h"
+#include "lwip/mem.h"
+#include "lwip/ip_addr.h"
+#include "lwip/opt.h"
+
 #include "comm.h"
-#include "etx_ota_update.h"   /* <-- for etx_ota_set_resp_sender */
+#include "etx_ota_update.h"
 
-struct tcp_pcb *g_port2000_pcb = NULL;  /* reply channel */
-struct tcp_pcb *g_port2001_pcb = NULL;  /* command channel */
+#include <string.h>
 
-void pcb_send_text(const char *msg, void *ctx) {
-  struct tcp_pcb *pcb = (struct tcp_pcb *)ctx;
-  if (!pcb || !msg) return;
-  u16_t len = (u16_t)strlen(msg);
-  if (!len) return;
-  if (tcp_sndbuf(pcb) < len) return;
-  if (tcp_write(pcb, msg, len, TCP_WRITE_FLAG_COPY) == ERR_OK) {
-    tcp_output(pcb);
+struct tcp_pcb *g_port2000_pcb = NULL;  /* reply channel (device->host) */
+struct tcp_pcb *g_port2001_pcb = NULL;  /* command/data channel (host->device) */
+
+/* ---------- Reply sender (lwIP-safe) ----------
+ * Called by OTA worker task.
+ * Schedules tcp_write() onto tcpip_thread via tcpip_callback().
+ */
+typedef struct {
+    struct tcp_pcb *pcb;
+    uint16_t len;
+    uint8_t  data[16]; /* RESPONSE frame is small (typically 10 bytes) */
+} resp_send_req_t;
+extern struct tcp_pcb *g_port2000_pcb;
+
+typedef struct {
+  struct tcp_pcb *pcb;
+  uint16_t len;
+  char     msg[96];
+} txt_req_t;
+
+static void do_send_txt(void *arg)
+{
+  txt_req_t *r = (txt_req_t*)arg;
+  if (!r) return;
+
+  if (r->pcb && tcp_sndbuf(r->pcb) >= r->len) {
+    if (tcp_write(r->pcb, r->msg, r->len, TCP_WRITE_FLAG_COPY) == ERR_OK) {
+      tcp_output(r->pcb);
+    }
   }
+  mem_free(r);
 }
 
-void pcb_send_bin(const uint8_t *data, size_t len, void *ctx) {
-  struct tcp_pcb *pcb = (struct tcp_pcb *)ctx;
-  if (!pcb || !data || !len) return;
-  u16_t ulen = (u16_t)len;     // safe if your replies are small
-  if (tcp_sndbuf(pcb) < ulen) return;
-  if (tcp_write(pcb, data, ulen, TCP_WRITE_FLAG_COPY) == ERR_OK) {
-    tcp_output(pcb);
-  }
+void bl_send_text_2000_from_task(const char *s)
+{
+  if (!s || !g_port2000_pcb) return;
+
+  size_t n = strlen(s);
+  if (n == 0) return;
+  if (n > 95) n = 95;
+
+  txt_req_t *r = (txt_req_t*)mem_malloc(sizeof(txt_req_t));
+  if (!r) return;
+
+  r->pcb = g_port2000_pcb;
+  r->len = (uint16_t)n;
+  memcpy(r->msg, s, n);
+  r->msg[n] = '\0';
+
+  tcpip_callback(do_send_txt, r);
+}
+static void do_send_resp(void *arg)
+{
+    resp_send_req_t *r = (resp_send_req_t*)arg;
+    if (!r) return;
+
+    if (r->pcb) {
+        if (tcp_sndbuf(r->pcb) >= r->len) {
+            if (tcp_write(r->pcb, r->data, r->len, TCP_WRITE_FLAG_COPY) == ERR_OK) {
+                tcp_output(r->pcb);
+            }
+        }
+    }
+    mem_free(r);
 }
 
-/* Sender used by OTA core to emit RESPONSE (ACK/NACK) on port 2000 */
-static void ota_resp_tx_over_tcp(const uint8_t *data, size_t len, void *ctx) {
-  struct tcp_pcb *pcb = (struct tcp_pcb*)ctx;
-  if (pcb) pcb_send_bin(data, len, pcb);
+void ota_resp_tx_lwip(const uint8_t *data, uint16_t len, void *ctx)
+{
+    struct tcp_pcb *pcb = (struct tcp_pcb*)ctx;
+    if (!data || len == 0 || !pcb) return;
+
+    resp_send_req_t *r = (resp_send_req_t*)mem_malloc(sizeof(resp_send_req_t));
+    if (!r) return;
+
+    r->pcb = pcb;
+    r->len = (len > sizeof(r->data)) ? (uint16_t)sizeof(r->data) : len;
+    memcpy(r->data, data, r->len);
+
+    tcpip_callback(do_send_resp, r);
+}
+
+/* ---------- Connection bookkeeping ---------- */
+ err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err);
+static err_t tcp_server_recv2001(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err);
+static void  tcp_server_close(struct tcp_pcb *tpcb);
+
+/* NOTE: tcp_err callback arg is the value set by tcp_arg(). */
+static void tcp_server_err(void *arg, err_t err)
+{
+    LWIP_UNUSED_ARG(err);
+    /* We set tcp_arg(pcb, NULL), so arg may be NULL.
+       IMPORTANT: pcb is already freed here; DO NOT call any tcp_* API. */
+    LWIP_UNUSED_ARG(arg);
+
+    /* Just clear globals defensively (if you track by pointer elsewhere, do it there). */
+    g_port2000_pcb = NULL;
+    g_port2001_pcb = NULL;
 }
 
 void tcp_server_init(void)
 {
-    struct tcp_pcb *recv_pcb;
-    struct tcp_pcb *send_pcb;
-    err_t err;
+    ip_addr_t ip;
+    IP_ADDR4(&ip, 192, 168, 0, 25);
 
-    ip_addr_t myIPADDR;
-    IP_ADDR4(&myIPADDR, 192, 168, 0, 25);
-
-    // ----------- Command PCB (Port 2001, device receives) -----------
-    recv_pcb = tcp_new();
-    if (recv_pcb != NULL) {
-        err = tcp_bind(recv_pcb, &myIPADDR, 2001);
-        if (err == ERR_OK) {
-            recv_pcb = tcp_listen(recv_pcb);
-            tcp_accept(recv_pcb, tcp_server_accept);
+    /* Listen on 2001 (RX from host) */
+    struct tcp_pcb *pcb2001 = tcp_new();
+    if (pcb2001) {
+        if (tcp_bind(pcb2001, &ip, 2001) == ERR_OK) {
+            pcb2001 = tcp_listen(pcb2001);
+            tcp_accept(pcb2001, tcp_server_accept);
         } else {
-            memp_free(MEMP_TCP_PCB, recv_pcb);
+            tcp_close(pcb2001);
         }
     }
 
-    // ----------- Reply PCB (Port 2000, device sends ACK/echo) -----------
-    send_pcb = tcp_new();
-    if (send_pcb != NULL) {
-        err = tcp_bind(send_pcb, &myIPADDR, 2000);
-        if (err == ERR_OK) {
-            send_pcb = tcp_listen(send_pcb);
-            tcp_accept(send_pcb, tcp_server_accept);
+    /* Listen on 2000 (TX replies to host) */
+    struct tcp_pcb *pcb2000 = tcp_new();
+    if (pcb2000) {
+        if (tcp_bind(pcb2000, &ip, 2000) == ERR_OK) {
+            pcb2000 = tcp_listen(pcb2000);
+            tcp_accept(pcb2000, tcp_server_accept);
         } else {
-            memp_free(MEMP_TCP_PCB, send_pcb);
+            tcp_close(pcb2000);
         }
     }
 }
 
-err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
+ err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
 {
-  err_t ret_err;
-  struct tcp_server_struct *es;
+    LWIP_UNUSED_ARG(arg);
+    LWIP_UNUSED_ARG(err);
 
-  LWIP_UNUSED_ARG(arg);
-  LWIP_UNUSED_ARG(err);
+    tcp_setprio(newpcb, TCP_PRIO_MIN);
+    tcp_nagle_disable(newpcb);
 
-  tcp_setprio(newpcb, TCP_PRIO_MIN);
-
-  es = (struct tcp_server_struct *)mem_malloc(sizeof(struct tcp_server_struct));
-  if (es != NULL)
-  {
-    es->state   = ES_ACCEPTED;
-    es->pcb     = newpcb;
-    es->retries = 0;
-    es->p       = NULL;
-
-    /* Attach state to pcb */
-    tcp_arg(newpcb, es);
-    tcp_err(newpcb, tcp_server_error);
+    /* VERY IMPORTANT: set err callback (pcb can die unexpectedly) */
+    tcp_err(newpcb, tcp_server_err);
 
     if (newpcb->local_port == 2000) {
-      /* Store the pcb we will use to SEND replies */
-      g_port2000_pcb = newpcb;
+        g_port2000_pcb = newpcb;
 
-      /* Register OTA ACK/NACK sender to use port 2000 */
-      etx_ota_set_resp_sender(ota_resp_tx_over_tcp, (void*)g_port2000_pcb);
+        /* reply-only: do not receive on 2000 */
+        tcp_recv(newpcb, NULL);
 
-      /* We don't need to receive on 2000; it's a reply-only channel */
-      tcp_recv(newpcb, NULL);
-      tcp_sent(newpcb, tcp_server_sent);  /* optional */
+        /* tell OTA core how to send ACK/NACK safely */
+        etx_ota_set_resp_sender(ota_resp_tx_lwip, g_port2000_pcb);
 
-    } else if (newpcb->local_port == 2001) {
-      /* Store the pcb we will use to RECEIVE commands */
-      g_port2001_pcb = newpcb;
-
-      /* Receive commands here */
-      tcp_recv(newpcb, tcp_server_recv);
-      tcp_sent(newpcb, tcp_server_sent);  /* optional */
+        const char *hello = "PORT2000 READY\r\n";
+        tcp_write(newpcb, hello, (u16_t)strlen(hello), TCP_WRITE_FLAG_COPY);
+        tcp_output(newpcb);
+        return ERR_OK;
     }
 
-    ret_err = ERR_OK;
-  }
-  else
-  {
-    tcp_server_connection_close(newpcb, es);
-    ret_err = ERR_MEM;
-  }
-  return ret_err;
+    if (newpcb->local_port == 2001) {
+        g_port2001_pcb = newpcb;
+
+        /* RX path */
+        tcp_recv(newpcb, tcp_server_recv2001);
+        return ERR_OK;
+    }
+
+    tcp_server_close(newpcb);
+    return ERR_VAL;
 }
 
-void send_reply_on_2000(const char *msg)
+/* Fast path receive: copy bytes -> comm -> free */
+static err_t tcp_server_recv2001(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
 {
-  if (!g_port2000_pcb || !msg) return;
+    LWIP_UNUSED_ARG(arg);
 
-  u16_t len = (u16_t)strlen(msg);
-  if (len == 0) return;
-
-  if (tcp_sndbuf(g_port2000_pcb) < len) {
-    return;
-  }
-
-  if (tcp_write(g_port2000_pcb, msg, len, TCP_WRITE_FLAG_COPY) == ERR_OK) {
-    tcp_output(g_port2000_pcb);
-  }
-}
-
-err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
-{
-  struct tcp_server_struct *es;
-  err_t ret_err;
-
-  LWIP_ASSERT("arg != NULL",arg != NULL);
-
-  es = (struct tcp_server_struct *)arg;
-
-  if (p == NULL)
-  {
-    es->state = ES_CLOSING;
-    if(es->p == NULL)
-    {
-       tcp_server_connection_close(tpcb, es);
+    if (p == NULL) {
+        tcp_server_close(tpcb);
+        return ERR_OK;
     }
-    else
-    {
-      tcp_sent(tpcb, tcp_server_sent);
-      tcp_server_send(tpcb, es);
+
+    if (err != ERR_OK) {
+        pbuf_free(p);
+        return err;
     }
-    ret_err = ERR_OK;
-  }
-  else if(err != ERR_OK)
-  {
-    if (p != NULL)
-    {
-      es->p = NULL;
-      pbuf_free(p);
-    }
-    ret_err = err;
-  }
-  else if(es->state == ES_ACCEPTED || es->state == ES_RECEIVED)
-  {
-      es->state = ES_RECEIVED;
-      es->p = p;
-      tcp_sent(tpcb, tcp_server_sent);
-      tcp_server_handle(tpcb, es);
-      ret_err = ERR_OK;
-  }
-  else if (es->state == ES_RECEIVED)
-  {
-    if(es->p == NULL)
-    {
-      es->p = p;
-      tcp_server_handle(tpcb, es);
-    }
-    else
-    {
-      struct pbuf *ptr;
-      ptr = es->p;
-      pbuf_chain(ptr,p);
-    }
-    ret_err = ERR_OK;
-  }
-  else if(es->state == ES_CLOSING)
-  {
-    tcp_recved(tpcb, p->tot_len);
-    es->p = NULL;
-    pbuf_free(p);
-    ret_err = ERR_OK;
-  }
-  else
-  {
-    tcp_recved(tpcb, p->tot_len);
-    es->p = NULL;
-    pbuf_free(p);
-    ret_err = ERR_OK;
-  }
-  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
-  return ret_err;
-}
 
-void tcp_server_error(void *arg, err_t err)
-{
-  struct tcp_server_struct *es;
-  LWIP_UNUSED_ARG(err);
-
-  es = (struct tcp_server_struct *)arg;
-  if (es != NULL)
-  {
-    mem_free(es);
-  }
-}
-
-err_t tcp_server_sent(void *arg, struct tcp_pcb *tpcb, u16_t len)
-{
-  struct tcp_server_struct *es;
-  LWIP_UNUSED_ARG(len);
-
-  es = (struct tcp_server_struct *)arg;
-  es->retries = 0;
-
-  if(es->p != NULL)
-  {
-    tcp_sent(tpcb, tcp_server_sent);
-    tcp_server_send(tpcb, es);
-  }
-  else
-  {
-    if(es->state == ES_CLOSING)
-      tcp_server_connection_close(tpcb, es);
-  }
-  return ERR_OK;
-}
-
-err_t tcp_server_sent_data(void *arg, struct tcp_pcb *tpcb, u16_t len)
-{
-  struct tcp_server_struct *es;
-  LWIP_UNUSED_ARG(len);
-  es = (struct tcp_server_struct *)arg;
-  es->retries = 0;
-  tcp_server_send_data(tpcb, es);
-  return ERR_OK;
-}
-
-void tcp_server_send(struct tcp_pcb *tpcb, struct tcp_server_struct *es)
-{
-  struct pbuf *ptr;
-  err_t wr_err = ERR_OK;
-
-  while ((wr_err == ERR_OK) &&
-         (es->p != NULL) &&
-         (es->p->len <= tcp_sndbuf(tpcb)))
-  {
-    ptr = es->p;
-    wr_err = tcp_write(tpcb, ptr->payload, ptr->len, 1);
-
-    if (wr_err == ERR_OK)
-    {
-      u16_t plen;
-      u8_t freed;
-
-      plen = ptr->len;
-
-      es->p = ptr->next;
-
-      if(es->p != NULL)
-      {
-        pbuf_ref(es->p);
-      }
-
-      do { freed = pbuf_free(ptr); }
-      while(freed == 0);
-
-      tcp_recved(tpcb, plen);
-    }
-    else if(wr_err == ERR_MEM)
-    {
-      es->p = ptr;
-    }
-    else
-    {
-      /* other problem ?? */
-    }
-  }
-}
-
-void tcp_server_connection_close(struct tcp_pcb *tpcb, struct tcp_server_struct *es)
-{
-  if (tpcb == g_port2000_pcb) {
-    /* Clear responder so OTA falls back to UART if port 2000 drops */
-    etx_ota_set_resp_sender(NULL, NULL);
-    g_port2000_pcb = NULL;
-  }
-  if (tpcb == g_port2001_pcb) g_port2001_pcb = NULL;
-
-  tcp_arg(tpcb, NULL);
-  tcp_sent(tpcb, NULL);
-  tcp_recv(tpcb, NULL);
-  tcp_err(tpcb, NULL);
-  tcp_poll(tpcb, NULL, 0);
-
-  if (es != NULL) {
-    mem_free(es);
-  }
-  tcp_close(tpcb);
-}
-
-void tcp_server_handle(struct tcp_pcb *tpcb, struct tcp_server_struct *es)
-{
-    if (!es || !es->p) return;
-
-    /* Command channel (host -> device) feeds the framed/text parser */
-    if (tpcb && tpcb->local_port == 2001) {
-        struct pbuf *q = es->p;
-        while (q) {
-            comm_handle_rx((const uint8_t*)q->payload, q->len,
-                           pcb_send_text, pcb_send_bin, (void*)tpcb);
-            q = q->next;
+    /* Pass pbuf chain to stream parser */
+    for (struct pbuf *q = p; q != NULL; q = q->next) {
+        if (q->len && q->payload) {
+            comm_ota_rx_bytes((const uint8_t*)q->payload, (size_t)q->len);
         }
-    } else {
-        /* optional: legacy text-only path */
-        char in[128];
-        u16_t to_copy = LWIP_MIN(es->p->tot_len, (u16_t)(sizeof(in) - 1));
-        pbuf_copy_partial(es->p, in, to_copy, 0);
-        in[to_copy] = '\0';
-        comm_handle_line(in, pcb_send_text, pcb_send_bin, (void*)tpcb);
     }
 
-    tcp_recved(tpcb, es->p->tot_len);
-    pbuf_free(es->p);
-    es->p = NULL;
+    tcp_recved(tpcb, p->tot_len);
+    pbuf_free(p);
+    return ERR_OK;
+}
+
+static void tcp_server_close(struct tcp_pcb *tpcb)
+{
+    if (!tpcb) return;
+
+    if (tpcb == g_port2000_pcb) g_port2000_pcb = NULL;
+    if (tpcb == g_port2001_pcb) g_port2001_pcb = NULL;
+
+    tcp_arg(tpcb, NULL);
+    tcp_err(tpcb, NULL);
+    tcp_sent(tpcb, NULL);
+    tcp_recv(tpcb, NULL);
+    tcp_poll(tpcb, NULL, 0);
+
+    tcp_close(tpcb);
 }

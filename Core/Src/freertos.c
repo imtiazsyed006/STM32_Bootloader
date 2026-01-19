@@ -124,7 +124,9 @@ void StartDefaultTask(void const * argument)
   /* init code for LWIP */
   MX_LWIP_Init();
   /* USER CODE BEGIN StartDefaultTask */
+  etx_ota_worker_start();
   tcp_server_init();
+
   /* Infinite loop */
   for(;;)
   {

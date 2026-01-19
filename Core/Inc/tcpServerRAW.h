@@ -69,6 +69,7 @@ void pcb_send_text(const char *msg, void *ctx);
  err_t tcp_server_sent_data(void *arg, struct tcp_pcb *tpcb, u16_t len);
  void tcp_server_send_data(struct tcp_pcb *tpcb, struct tcp_server_struct *es);
  void tcp_server_connection_close(struct tcp_pcb *tpcb, struct tcp_server_struct *es);
+ void bl_send_text_2000_from_task(const char *s);
 
  void tcp_server_handle (struct tcp_pcb *tpcb, struct tcp_server_struct *es);
 #endif /* INC_TCPSERVERRAW_H_ */

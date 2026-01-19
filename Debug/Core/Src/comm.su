@@ -1,6 +1,2 @@
-../Core/Src/comm.c:37:12:iequals	32	static
-../Core/Src/comm.c:46:12:starts_with_ci	24	static
-../Core/Src/comm.c:56:20:skip_ws	16	static
-../Core/Src/comm.c:66:6:comm_handle_line	112	static
-../Core/Src/comm.c:123:6:comm_handle_rx	56	static
-../Core/Src/comm.c:200:13:comm_feed_text_bytes	32	static
+../Core/Src/comm.c:31:13:drop_bytes	16	static
+../Core/Src/comm.c:40:6:comm_ota_rx_bytes	32	static
