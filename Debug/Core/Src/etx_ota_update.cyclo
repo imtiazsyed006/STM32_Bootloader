@@ -1,10 +1,10 @@
 ../Core/Src/etx_ota_update.c:65:6:etx_ota_set_resp_sender	1
 ../Core/Src/etx_ota_update.c:72:17:crc32_stm32_bytes	4
 ../Core/Src/etx_ota_update.c:85:13:ota_uart_write	2
-../Core/Src/etx_ota_update.c:91:13:OTA_LOGF	3
+../Core/Src/etx_ota_update.c:91:6:OTA_LOGF	3
 ../Core/Src/etx_ota_update.c:106:13:etx_ota_send_resp	2
 ../Core/Src/etx_ota_update.c:153:13:ota_reset_session	1
-../Core/Src/etx_ota_update.c:161:13:goto_application	1
+../Core/Src/etx_ota_update.c:161:6:goto_application	1
 ../Core/Src/etx_ota_update.c:206:21:pool_alloc	4
 ../Core/Src/etx_ota_update.c:224:13:pool_free	5
 ../Core/Src/etx_ota_update.c:239:6:etx_ota_worker_start	4

@@ -88,7 +88,7 @@ static void ota_uart_write(const char *s)
     HAL_UART_Transmit(&huart3, (uint8_t*)s, (uint16_t)strlen(s), HAL_MAX_DELAY);
 }
 
-static void OTA_LOGF(const char *fmt, ...)
+void OTA_LOGF(const char *fmt, ...)
 {
     char buf[256];
     va_list ap;
@@ -158,7 +158,7 @@ static void ota_reset_session(void)
     slot_num_to_write    = 0xFFu;
     ota_state            = ETX_OTA_STATE_START;
 }
-static void goto_application(void)
+void goto_application(void)
 {
   printf("Jumping to application...\r\n");
 

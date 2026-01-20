@@ -26,6 +26,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "tcpServerRAW.h"
+#include "etx_ota_update.h"
+//extern osSemaphoreId tcpReadySem;
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -123,10 +125,34 @@ void StartDefaultTask(void const * argument)
 {
   /* init code for LWIP */
   MX_LWIP_Init();
-  /* USER CODE BEGIN StartDefaultTask */
   etx_ota_worker_start();
+  osSemaphoreDef(TCP_READY_SEM);
+  tcpReadySem = osSemaphoreCreate(osSemaphore(TCP_READY_SEM), 1);
+  osSemaphoreWait(tcpReadySem, 0);
   tcp_server_init();
+//  bl_send_text_2000_from_task("Server is started..\r\n");
+  if (tcpReadySem == NULL)
+  {
+  	OTA_LOGF("Semaphore did not create..\r\n");
+      Error_Handler();
+  }
+//  bl_send_text_2000_from_task("Waiting for the file..\r\n");
+  osSemaphoreWait(tcpReadySem, osWaitForever);  // will block until Release()
+  bl_send_text_2000_from_task("Event signaled, jumping to app\r\n");
+//  int32_t sem_res = osSemaphoreWait(tcpReadySem, 5000);
+//
+//  if (sem_res >= 0)
+//  {
+//      OTA_LOGF("TCP server is ready. There is no update request. I will jump to main application.\r\n");
+//  }
+//  else
+//  {
+//      OTA_LOGF("TCP server did not become ready in time (osSemaphoreWait error %ld). I will jump to main application.\r\n", sem_res);
+//  }
 
+  osDelay(2000);
+//  goto_application();
+  /* USER CODE BEGIN StartDefaultTask */
   /* Infinite loop */
   for(;;)
   {

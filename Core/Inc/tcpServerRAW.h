@@ -25,6 +25,7 @@
 
 #include "lwip/tcp.h"
 #include "stm32f7xx_hal.h"
+#include "cmsis_os.h"
 
 void tcp_server_init(void);
 
@@ -33,7 +34,7 @@ void tcp_server_init(void);
 
 /* Helper to send a short ASCII reply on port 2000 */
 void send_reply_on_2000(const char *msg);
-
+extern osSemaphoreId tcpReadySem;
 
 
 //extern uint8_t receivedData[100];

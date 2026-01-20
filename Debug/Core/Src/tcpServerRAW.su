@@ -4,6 +4,6 @@
 ../Core/Src/tcpServerRAW.c:90:6:ota_resp_tx_lwip	32	static
 ../Core/Src/tcpServerRAW.c:111:13:tcp_server_err	16	static
 ../Core/Src/tcpServerRAW.c:123:6:tcp_server_init	24	static
-../Core/Src/tcpServerRAW.c:151:8:tcp_server_accept	32	static
-../Core/Src/tcpServerRAW.c:190:14:tcp_server_recv2001	32	static
-../Core/Src/tcpServerRAW.c:216:13:tcp_server_close	16	static
+../Core/Src/tcpServerRAW.c:153:8:tcp_server_accept	32	static
+../Core/Src/tcpServerRAW.c:194:14:tcp_server_recv2001	32	static
+../Core/Src/tcpServerRAW.c:220:13:tcp_server_close	16	static

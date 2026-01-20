@@ -23,7 +23,7 @@
 
 struct tcp_pcb *g_port2000_pcb = NULL;  /* reply channel (device->host) */
 struct tcp_pcb *g_port2001_pcb = NULL;  /* command/data channel (host->device) */
-
+osSemaphoreId tcpReadySem;
 /* ---------- Reply sender (lwIP-safe) ----------
  * Called by OTA worker task.
  * Schedules tcp_write() onto tcpip_thread via tcpip_callback().
@@ -131,6 +131,8 @@ void tcp_server_init(void)
         if (tcp_bind(pcb2001, &ip, 2001) == ERR_OK) {
             pcb2001 = tcp_listen(pcb2001);
             tcp_accept(pcb2001, tcp_server_accept);
+
+
         } else {
             tcp_close(pcb2001);
         }
@@ -168,9 +170,10 @@ void tcp_server_init(void)
         /* tell OTA core how to send ACK/NACK safely */
         etx_ota_set_resp_sender(ota_resp_tx_lwip, g_port2000_pcb);
 
-        const char *hello = "PORT2000 READY\r\n";
+        const char *hello = "Bootloader is running. Looking for upload command..\r\n";
         tcp_write(newpcb, hello, (u16_t)strlen(hello), TCP_WRITE_FLAG_COPY);
         tcp_output(newpcb);
+        osSemaphoreRelease(tcpReadySem);
         return ERR_OK;
     }
 
@@ -179,9 +182,10 @@ void tcp_server_init(void)
 
         /* RX path */
         tcp_recv(newpcb, tcp_server_recv2001);
+
         return ERR_OK;
     }
-
+//    osSemaphoreRelease(tcpReadySem);
     tcp_server_close(newpcb);
     return ERR_VAL;
 }
