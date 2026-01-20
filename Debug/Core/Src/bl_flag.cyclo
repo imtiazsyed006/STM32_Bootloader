@@ -1,0 +1,4 @@
+../Core/Src/bl_flag.c:11:6:BL_Flag_InitBackupDomain	1
+../Core/Src/bl_flag.c:19:6:BL_Flag_SetOtaRequest	1
+../Core/Src/bl_flag.c:25:9:BL_Flag_IsOtaRequested	2
+../Core/Src/bl_flag.c:31:6:BL_Flag_ClearOtaRequest	1

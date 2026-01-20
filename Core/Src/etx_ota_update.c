@@ -25,7 +25,7 @@
 
 /* RTOS (CMSIS-OS v1) */
 #include "cmsis_os.h"
-
+#include "rtc.h"
 /* -------------------- Protocol constants -------------------- */
 #ifndef ETX_OTA_SOF
 #define ETX_OTA_SOF  0xAA
@@ -541,7 +541,7 @@ static ETX_OTA_EX_ etx_process_data(uint8_t *buf, uint16_t len)
                   bl_send_text_2000_from_task("BL_JUMPING\r\n");
 
                   osDelay(200);   // give lwIP time to push out packets
-
+                  BL_Flag_ClearOtaRequest(&hrtc);
                   goto_application();
                 }
             }

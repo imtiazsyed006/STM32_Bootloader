@@ -29,17 +29,11 @@
 
 void tcp_server_init(void);
 
-//struct tcp_pcb *g_port2000_pcb = NULL;  /* reply channel */
-//struct tcp_pcb *g_port2001_pcb = NULL;  /* command channel */
 
 /* Helper to send a short ASCII reply on port 2000 */
 void send_reply_on_2000(const char *msg);
 extern osSemaphoreId tcpReadySem;
 
-
-//extern uint8_t receivedData[100];
-//extern uint8_t dataToSend;
-//extern uint8_t interruptOccured;
 /*  protocol states */
 enum tcp_server_states
 {
