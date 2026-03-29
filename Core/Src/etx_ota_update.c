@@ -700,20 +700,40 @@ static ETX_OTA_EX_ finalize_staged_image_and_mark(void)
 
 static uint8_t get_available_slot_number(void)
 {
-    uint8_t slot_number = 0xFF;
-
     ETX_GNRL_CFG_ cfg;
     memcpy(&cfg, cfg_flash, sizeof(cfg));
 
+    /* Primary policy:
+     * 1) Prefer a slot already marked invalid (safe to overwrite)
+     * 2) Otherwise use a slot that is not explicitly active (active must be exactly 1)
+     * 3) Otherwise use a slot that is not marked "run this fw"
+     * 4) Final fallback: slot 0 (prevents deadlock on corrupted cfg bytes)
+     */
     for (uint8_t i = 0; i < ETX_NO_OF_SLOTS; i++) {
-        if ((cfg.slot_table[i].is_this_slot_not_valid != 0u) ||
-            (cfg.slot_table[i].is_this_slot_active == 0u)) {
-            slot_number = i;
-            OTA_LOGF("[OTA] Using Slot %u\r\n", slot_number);
-            break;
+        if (cfg.slot_table[i].is_this_slot_not_valid == 1u) {
+            OTA_LOGF("[OTA] Using Slot %u (invalid=1)\r\n", i);
+            return i;
         }
     }
-    return slot_number;
+
+    for (uint8_t i = 0; i < ETX_NO_OF_SLOTS; i++) {
+        if (cfg.slot_table[i].is_this_slot_active != 1u) {
+            OTA_LOGF("[OTA] Using Slot %u (active=%u)\r\n",
+                     i, (unsigned)cfg.slot_table[i].is_this_slot_active);
+            return i;
+        }
+    }
+
+    for (uint8_t i = 0; i < ETX_NO_OF_SLOTS; i++) {
+        if (cfg.slot_table[i].should_we_run_this_fw != 1u) {
+            OTA_LOGF("[OTA] Using Slot %u (run=%u)\r\n",
+                     i, (unsigned)cfg.slot_table[i].should_we_run_this_fw);
+            return i;
+        }
+    }
+
+    OTA_LOGF("[OTA] CFG inconsistent: both slots busy, fallback Slot 0\r\n");
+    return 0u;
 }
 
 void load_new_app(void)
