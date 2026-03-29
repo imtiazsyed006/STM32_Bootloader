@@ -153,5 +153,8 @@ void        etx_ota_set_resp_sender(etx_tx_fn_t fn, void *ctx);
 ETX_OTA_EX_ etx_ota_feed_frame(const uint8_t *frame, uint16_t len);
 void etx_ota_send_text_raw(const char *s, uint16_t n);
 void etx_ota_logf(const char *fmt, ...);
+void OTA_LOGF(const char *fmt, ...);
+void goto_application(void);
+void etx_ota_worker_start(void);
 //#define OTA_LOGF(...)  do { etx_ota_logf(__VA_ARGS__); } while (0)
 #endif /* INC_ETX_OTA_UPDATE_H_ */

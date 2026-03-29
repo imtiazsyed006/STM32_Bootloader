@@ -26,6 +26,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "tcpServerRAW.h"
+#include "etx_ota_update.h"
+#include "bl_flag.h"
+//extern osSemaphoreId tcpReadySem;
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -122,11 +125,37 @@ void MX_FREERTOS_Init(void) {
 void StartDefaultTask(void const * argument)
 {
   /* init code for LWIP */
+
+
   MX_LWIP_Init();
+
   /* USER CODE BEGIN StartDefaultTask */
   etx_ota_worker_start();
+  osSemaphoreDef(TCP_READY_SEM);
+  tcpReadySem = osSemaphoreCreate(osSemaphore(TCP_READY_SEM), 1);
+  osSemaphoreWait(tcpReadySem, 0);
   tcp_server_init();
+  if (tcpReadySem == NULL)
+  {
+  	OTA_LOGF("Semaphore did not create..\r\n");
+      Error_Handler();
+  }
+  osSemaphoreWait(tcpReadySem, osWaitForever);
 
+  int flag = 0;
+  while (BL_Flag_IsOtaRequested(&hrtc))
+  {
+	  if (flag == 0)
+	  {
+		  bl_send_text_2000_from_task("Waiting for bin file. \r\n");
+		  flag = 1;
+	  }
+
+	  osDelay(200);
+  }
+  bl_send_text_2000_from_task("Jumping to the main application... \r\n");
+  osDelay(200);
+  goto_application();
   /* Infinite loop */
   for(;;)
   {

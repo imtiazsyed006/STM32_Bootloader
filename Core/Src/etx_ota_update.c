@@ -25,7 +25,7 @@
 
 /* RTOS (CMSIS-OS v1) */
 #include "cmsis_os.h"
-
+#include "rtc.h"
 /* -------------------- Protocol constants -------------------- */
 #ifndef ETX_OTA_SOF
 #define ETX_OTA_SOF  0xAA
@@ -88,7 +88,7 @@ static void ota_uart_write(const char *s)
     HAL_UART_Transmit(&huart3, (uint8_t*)s, (uint16_t)strlen(s), HAL_MAX_DELAY);
 }
 
-static void OTA_LOGF(const char *fmt, ...)
+void OTA_LOGF(const char *fmt, ...)
 {
     char buf[256];
     va_list ap;
@@ -158,7 +158,7 @@ static void ota_reset_session(void)
     slot_num_to_write    = 0xFFu;
     ota_state            = ETX_OTA_STATE_START;
 }
-static void goto_application(void)
+void goto_application(void)
 {
   printf("Jumping to application...\r\n");
 
@@ -541,7 +541,7 @@ static ETX_OTA_EX_ etx_process_data(uint8_t *buf, uint16_t len)
                   bl_send_text_2000_from_task("BL_JUMPING\r\n");
 
                   osDelay(200);   // give lwIP time to push out packets
-
+                  BL_Flag_ClearOtaRequest(&hrtc);
                   goto_application();
                 }
             }
