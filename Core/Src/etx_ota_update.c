@@ -158,25 +158,85 @@ static void ota_reset_session(void)
     slot_num_to_write    = 0xFFu;
     ota_state            = ETX_OTA_STATE_START;
 }
+//void goto_application(void)
+//{
+//  printf("Jumping to application...\r\n");
+//
+//  void (*app_reset_handler)(void) =
+//      (void*)(*((volatile uint32_t*) (ETX_APP_FLASH_ADDR + 4U)));
+//
+//  // Turn OFF LED before leaving BL
+//  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+//
+//  HAL_RCC_DeInit();
+//  HAL_DeInit();
+//  __set_MSP(*(volatile uint32_t*) ETX_APP_FLASH_ADDR);
+//  SysTick->CTRL = 0;
+//  SysTick->LOAD = 0;
+//  SysTick->VAL  = 0;
+//
+//  app_reset_handler();
+//}
+
 void goto_application(void)
 {
-  printf("Jumping to application...\r\n");
+    const uint32_t app_base  = ETX_APP_FLASH_ADDR;
+    const uint32_t app_sp    = *(volatile uint32_t *)app_base;
+    const uint32_t app_reset = *(volatile uint32_t *)(app_base + 4U);
 
-  void (*app_reset_handler)(void) =
-      (void*)(*((volatile uint32_t*) (ETX_APP_FLASH_ADDR + 4U)));
+    /* Validate app vector table */
+    if ((app_sp < 0x20000000U) || (app_sp > 0x20080000U) || ((app_sp & 0x3U) != 0U)) {
+        return;
+    }
+    if ((app_reset & 0x1U) == 0U) {  /* Reset handler must be Thumb address */
+        return;
+    }
+    if ((app_reset & 0xFF000000U) != 0x08000000U) { /* Must point to internal Flash */
+        return;
+    }
 
-  // Turn OFF LED before leaving BL
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+    __disable_irq();
 
-  HAL_RCC_DeInit();
-  HAL_DeInit();
-  __set_MSP(*(volatile uint32_t*) ETX_APP_FLASH_ADDR);
-  SysTick->CTRL = 0;
-  SysTick->LOAD = 0;
-  SysTick->VAL  = 0;
+    /* Optional board indication before leaving BL */
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
 
-  app_reset_handler();
+    /* Stop SysTick/HAL tick */
+    SysTick->CTRL = 0U;
+    SysTick->LOAD = 0U;
+    SysTick->VAL  = 0U;
+
+    HAL_RCC_DeInit();
+    HAL_DeInit();
+
+    /* Disable and clear all IRQs configured by bootloader */
+    for (uint32_t i = 0U; i < 8U; i++) {
+        NVIC->ICER[i] = 0xFFFFFFFFU;
+        NVIC->ICPR[i] = 0xFFFFFFFFU;
+    }
+
+    /* Set vector table to application */
+    SCB->VTOR = app_base;
+    __DSB();
+    __ISB();
+
+    /* Leave RTOS task context: privileged Thread mode, MSP */
+    __set_CONTROL(0U);
+    __ISB();
+
+    __set_MSP(app_sp);
+
+    /* Re-enable interrupts for application startup */
+    __set_PRIMASK(0U);
+    __DSB();
+    __ISB();
+
+    ((void (*)(void))app_reset)();
+
+    while (1) {
+        /* Should never return */
+    }
 }
+
 /* =======================================================================
  * CMSIS-OS v1 Worker + Queue (Frame processing outside tcpip_thread)
  * ======================================================================= */
@@ -541,6 +601,7 @@ static ETX_OTA_EX_ etx_process_data(uint8_t *buf, uint16_t len)
                   bl_send_text_2000_from_task("BL_JUMPING\r\n");
 
                   osDelay(200);   // give lwIP time to push out packets
+                  load_new_app();  // copy staged image to app region (optional, can boot from slot directly if vectors are correct)
                   BL_Flag_ClearOtaRequest(&hrtc);
                   goto_application();
                 }
