@@ -151,6 +151,10 @@ void        etx_ota_set_resp_sender(etx_tx_fn_t fn, void *ctx);
 
 /* Feed a complete framed packet (SOF..EOF) from TCP; returns ETX_OTA_EX_OK on accept */
 ETX_OTA_EX_ etx_ota_feed_frame(const uint8_t *frame, uint16_t len);
+
+/* Post a complete framed packet (SOF..EOF) to the OTA worker via message queue */
+void etx_ota_post_frame(const uint8_t *frame, uint16_t len);
+
 void etx_ota_send_text_raw(const char *s, uint16_t n);
 void etx_ota_logf(const char *fmt, ...);
 void OTA_LOGF(const char *fmt, ...);

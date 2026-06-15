@@ -24,4 +24,8 @@ void comm_handle_rx(const uint8_t *data, size_t len,
                     comm_send_text_fn send_text,
                     comm_send_bin_fn send_bin,
                     void *ctx);
+
+/* Feed raw bytes from TCP port 2001 into the OTA frame assembler */
+void comm_ota_rx_bytes(const uint8_t *data, size_t len);
+
 #endif /* INC_COMM_H_ */

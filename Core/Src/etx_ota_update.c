@@ -26,6 +26,8 @@
 /* RTOS (CMSIS-OS v1) */
 #include "cmsis_os.h"
 #include "rtc.h"
+#include "tcpServerRAW.h"
+#include "bl_flag.h"
 /* -------------------- Protocol constants -------------------- */
 #ifndef ETX_OTA_SOF
 #define ETX_OTA_SOF  0xAA
